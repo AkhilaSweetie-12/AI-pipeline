@@ -237,17 +237,17 @@ jobs:
             const fs = require('fs');
             const path = './frontend/playwright-report/results.json';
             
-            let comment = '## 🎭 Playwright Test Results\n\n';
+            let comment = '## Playwright Test Results\n\n';
             
             if (fs.existsSync(path)) {
               const results = JSON.parse(fs.readFileSync(path, 'utf8'));
-              comment += `✅ Passed: ${results.passed}\n`;
-              comment += `❌ Failed: ${results.failed}\n`;
-              comment += `⏭️ Skipped: ${results.skipped}\n`;
-              comment += `⏱️ Duration: ${results.duration}ms\n\n`;
+              comment += `Passed: ${results.passed}\n`;
+              comment += `Failed: ${results.failed}\n`;
+              comment += `Skipped: ${results.skipped}\n`;
+              comment += `Duration: ${results.duration}ms\n\n`;
               
               if (results.failed > 0) {
-                comment += '### ❌ Failed Tests\n\n';
+                comment += '### Failed Tests\n\n';
                 results.suites.forEach(suite => {
                   suite.specs.forEach(spec => {
                     spec.tests.forEach(test => {
@@ -260,7 +260,7 @@ jobs:
                 });
               }
             } else {
-              comment += '❌ Test results not found\n';
+              comment += 'Test results not found\n';
             }
             
             github.rest.issues.createComment({
