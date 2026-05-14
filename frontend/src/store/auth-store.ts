@@ -11,6 +11,7 @@ interface AuthStore extends Omit<AuthState, 'refreshToken'> {
   setUser: (user: User | null) => void;
   setTokens: (token: string, refreshToken: string) => void;
   clearAuth: () => void;
+  refreshTokenString: string | null;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -18,7 +19,7 @@ export const useAuthStore = create<AuthStore>()(
     (set, get) => ({
       user: null,
       token: null,
-      refreshToken: null,
+      refreshTokenString: null,
       isLoading: false,
       isAuthenticated: false,
 

@@ -1,12 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import { AppModule } from './app.module';
 import { WinstonModule } from 'nest-winston';
-import { createLogger } from 'winston';
+import { createLogger, format, transports } from 'winston';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
@@ -19,15 +19,18 @@ async function bootstrap() {
   const logger = createLogger({
     level: configService.get('LOG_LEVEL') || 'info',
     format: configService.get('NODE_ENV') === 'production' 
-      ? 'json' 
-      : 'simple',
+      ? format.json() 
+      : format.combine(
+          format.colorize(),
+          format.simple()
+        ),
     transports: [
-      new (require('winston').transports.Console)(),
-      new (require('winston').transports.File)({ 
+      new transports.Console(),
+      new transports.File({ 
         filename: 'logs/error.log', 
         level: 'error' 
       }),
-      new (require('winston').transports.File)({ 
+      new transports.File({ 
         filename: 'logs/combined.log' 
       }),
     ],
@@ -102,7 +105,7 @@ async function bootstrap() {
   }
 
   // Health check endpoint
-  app.get('/health', (req, res) => {
+  app.getHttpServer().get('/health', (req: any, res: any) => {
     res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -114,9 +117,9 @@ async function bootstrap() {
   const port = configService.get('PORT') || 3001;
   await app.listen(port, '0.0.0.0');
 
-  logger.log(`🚀 Application is running on: http://0.0.0.0:${port}`);
-  logger.log(`📚 API documentation available at: http://0.0.0.0:${port}/api/docs`);
-  logger.log(`🏥 Health check endpoint: http://0.0.0.0:${port}/health`);
+  logger.info(`🚀 Application is running on: http://0.0.0.0:${port}`);
+  logger.info(`📚 API documentation available at: http://0.0.0.0:${port}/api/docs`);
+  logger.info(`🏥 Health check endpoint: http://0.0.0.0:${port}/health`);
 }
 
 bootstrap().catch((error) => {

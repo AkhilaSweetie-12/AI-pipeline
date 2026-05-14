@@ -25,10 +25,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider
-          attribute="class"
           defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
         >
           <AuthProvider>
             <div className="min-h-screen bg-background font-sans antialiased">
