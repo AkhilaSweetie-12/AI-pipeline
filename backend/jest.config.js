@@ -1,0 +1,30 @@
+module.exports = {
+  displayName: 'ai-platform-backend',
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/src'],
+  testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
+  transform: {
+    '^.+\\.ts$': 'ts-jest',
+  },
+  collectCoverageFrom: [
+    'src/**/*.{ts,js}',
+    '!src/**/*.d.ts',
+    '!src/**/*.spec.ts',
+    '!src/**/*.test.ts',
+  ],
+  coverageDirectory: 'coverage',
+  testTimeout: 30000,
+  moduleNameMapping: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '^@/auth/(.*)$': '<rootDir>/src/auth/$1',
+    '^@/chat/(.*)$': '<rootDir>/src/chat/$1',
+    '^@/users/(.*)$': '<rootDir>/src/users/$1',
+    '^@/prompts/(.*)$': '<rootDir>/src/prompts/$1',
+    '^@/metrics/(.*)$': '<rootDir>/src/metrics/$1',
+    '^@/config/(.*)$': '<rootDir>/src/config/$1',
+    '^@/common/(.*)$': '<rootDir>/src/common/$1',
+    '^@/database/(.*)$': '<rootDir>/src/database/$1',
+  },
+  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+};
