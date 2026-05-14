@@ -1,0 +1,45 @@
+{
+  "mcpServers": {
+    "propel-iq": {
+      "disabled": false,
+      "serverUrl": "https://mcp-propel-iq-ctb0gghxbweactfq.eastus-01.azurewebsites.net/mcp"
+    },
+    "context7": {
+      "disabled": false,
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "serverUrl": "https://mcp.context7.com/mcp"
+    },
+    "playwright": {
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "command": "npx",
+      "env": {}
+    },
+    "sequential-thinking": {
+      "args": [
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "command": "npx",
+      "disabled": false,
+      "env": {
+        "DISABLE_THOUGHT_LOGGING": "true",
+        "MCP_TIMEOUT": "60000",
+        "MCP_TOOL_TIMEOUT": "120000" 
+      }
+    },
+    "shadcn": {
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ],
+      "command": "npx",
+      "env": {}
+    },
+    "figma": {
+       "serverUrl": "https://mcp.figma.com/mcp"
+     }
+  }
+}

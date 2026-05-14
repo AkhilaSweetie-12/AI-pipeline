@@ -1,0 +1,19 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+nul
+*/settings.local.json
+
+# PropelIQ-Windsurf Framework
+.env
+.windsurf/*
+.propel/templates/*

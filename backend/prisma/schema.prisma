@@ -1,0 +1,188 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(USER)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  conversations Conversation[]
+  messages       Message[]
+  prompts        PromptTemplate[]
+  files          FileUpload[]
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  title     String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+  metadata Json?     // Store conversation metadata like total tokens, cost, etc.
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String     @id @default(cuid())
+  content        String
+  role           MessageRole
+  conversationId String
+  userId         String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // AI-specific fields
+  metadata Json? // Store message metadata like model, tokens, cost, etc.
+
+  @@map("messages")
+}
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  content     String
+  category    String
+  isPublic    Boolean  @default(false)
+  userId      String
+  tags        String[] // Array of tags
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("prompt_templates")
+}
+
+model FileUpload {
+  id         String   @id @default(cuid())
+  name       String
+  originalName String
+  size       Int
+  type       String
+  url        String
+  path       String
+  userId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("file_uploads")
+}
+
+model AuditLog {
+  id        String       @id @default(cuid())
+  action    AuditAction
+  resource  String
+  userId    String?
+  ipAddress String?
+  userAgent String?
+  details   Json?        // Store additional details
+  createdAt DateTime     @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  key       String   @unique
+  userId    String
+  isActive  Boolean  @default(true)
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("api_keys")
+}
+
+model Metrics {
+  id                String   @id @default(cuid())
+  date              DateTime @default(now())
+  totalUsers        Int      @default(0)
+  activeUsers       Int      @default(0)
+  totalConversations Int     @default(0)
+  totalMessages     Int      @default(0)
+  totalTokens       BigInt   @default(0)
+  totalCost         Decimal  @default(0.00)
+  averageResponseTime Float   @default(0)
+  errorRate         Float    @default(0)
+
+  @@map("metrics")
+}
+
+model Settings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  UPLOAD
+  DOWNLOAD
+}

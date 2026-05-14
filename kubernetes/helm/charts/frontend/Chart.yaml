@@ -1,0 +1,21 @@
+apiVersion: v2
+name: ai-platform-frontend
+description: A Helm chart for AI Platform Frontend
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai
+  - platform
+  - frontend
+  - nextjs
+  - react
+home: https://github.com/AkhilaSweetie-12/AI-pipeline
+sources:
+  - https://github.com/AkhilaSweetie-12/AI-pipeline
+maintainers:
+  - name: AI Platform Team
+    email: team@aiplatform.com
+annotations:
+  category: Application
+  licenses: MIT

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-frontend
+  namespace: default
+  labels:
+    app: ai-platform-frontend
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-platform-frontend
+  template:
+    metadata:
+      labels:
+        app: ai-platform-frontend
+        version: v1
+    spec:
+      serviceAccountName: ai-application
+      containers:
+      - name: frontend
+        image: asia-south1-docker.pkg.dev/akhila-gcp-123-493309/ai-platform/ai-platform-frontend:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: NEXT_PUBLIC_API_URL
+          value: "http://ai-platform-backend-service:3001"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      restartPolicy: Always

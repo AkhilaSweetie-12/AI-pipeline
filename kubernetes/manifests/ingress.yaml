@@ -1,0 +1,47 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-platform-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "ai-platform-ip"
+    networking.gke.io/managed-certificates: "ai-platform-ssl-cert"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - aiplatform.example.com
+    secretName: ai-platform-tls
+  rules:
+  - host: aiplatform.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-platform-backend-service
+            port:
+              number: 3001
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ai-platform-frontend-service
+            port:
+              number: 3000
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ai-platform-ssl-cert
+  namespace: default
+spec:
+  secretName: ai-platform-tls
+  dnsNames:
+  - aiplatform.example.com
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
