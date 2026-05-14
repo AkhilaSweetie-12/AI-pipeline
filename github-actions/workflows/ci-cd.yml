@@ -16,7 +16,7 @@ jobs:
   frontend-ci:
     name: Frontend CI/CD
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'frontend/') || github.event_name == 'pull_request'
+    if: contains(github.event.head_commit.modified, 'frontend/') || github.event_name == 'pull_request' || github.event_name == 'push'
     
     permissions:
       contents: read
@@ -65,7 +65,7 @@ jobs:
   backend-ci:
     name: Backend CI/CD
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'backend/') || github.event_name == 'pull_request'
+    if: contains(github.event.head_commit.modified, 'backend/') || github.event_name == 'pull_request' || github.event_name == 'push'
     
     permissions:
       contents: read
@@ -201,7 +201,7 @@ jobs:
   terraform-validate:
     name: Terraform Validation
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'infrastructure/') || github.event_name == 'pull_request'
+    if: contains(github.event.head_commit.modified, 'infrastructure/') || github.event_name == 'pull_request' || github.event_name == 'push'
     
     permissions:
       contents: read
