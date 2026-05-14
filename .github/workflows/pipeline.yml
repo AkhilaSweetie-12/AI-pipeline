@@ -1,0 +1,637 @@
+name: AI Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, release/*, feature/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  PROJECT_ID: akhila-gcp-123-493309
+  REGION: asia-south1
+  REPOSITORY: ai-platform
+  NODE_VERSION: '18'
+
+jobs:
+  # Frontend CI/CD
+  frontend-ci:
+    name: Frontend CI/CD
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'frontend/') || github.event_name == 'pull_request' || github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: ./frontend
+        run: npm run type-check
+
+      - name: Lint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: ./frontend
+        run: npm run test
+
+      - name: Build
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/.next
+          retention-days: 1
+
+  # Backend CI/CD
+  backend-ci:
+    name: Backend CI/CD
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'backend/') || github.event_name == 'pull_request' || github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Type check
+        working-directory: ./backend
+        run: npm run type-check
+
+      - name: Lint
+        working-directory: ./backend
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: ./backend
+        run: npm run test
+
+      - name: Build
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: backend/dist
+          retention-days: 1
+
+  # E2E Tests
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, backend-ci]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+      pull-requests: write
+
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd frontend && npm ci
+          cd ../backend && npm ci
+
+      - name: Install Playwright
+        working-directory: ./frontend
+        run: npx playwright install --with-deps
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/.next
+        continue-on-error: true
+
+      - name: Build frontend if no artifacts
+        working-directory: ./frontend
+        run: npm run build
+        if: failure()
+
+      - name: Start services
+        run: |
+          # Start backend
+          cd backend
+          npm run start:prod &
+          BACKEND_PID=$!
+          
+          # Wait for backend to be ready
+          sleep 30
+          
+          # Start frontend
+          cd ../frontend
+          npm run start &
+          FRONTEND_PID=$!
+          
+          # Wait for frontend to be ready
+          sleep 30
+          
+          # Save PIDs for cleanup
+          echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
+          echo "FRONTEND_PID=$FRONTEND_PID" >> $GITHUB_ENV
+
+      - name: Wait for services to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -f http://localhost:3000/health; do sleep 2; done'
+
+      - name: Create test users
+        run: |
+          # Create test users via API
+          curl -X POST http://localhost:3001/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"testuser@example.com","password":"${{ secrets.PLAYWRIGHT_TEST_PASSWORD }}","name":"Test User"}' || true
+          
+          curl -X POST http://localhost:3001/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@example.com","password":"${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}","name":"Admin User"}' || true
+
+      - name: Run Playwright tests
+        working-directory: ./frontend
+        run: npx playwright test --shard=${{ matrix.shard }}/4
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
+          PLAYWRIGHT_TEST_API_URL: http://localhost:3001
+          PLAYWRIGHT_TEST_PASSWORD: ${{ secrets.PLAYWRIGHT_TEST_PASSWORD }}
+          PLAYWRIGHT_ADMIN_PASSWORD: ${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results-shard-${{ matrix.shard }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.shard == 1
+        with:
+          name: playwright-html-report
+          path: frontend/playwright-report/
+          retention-days: 30
+
+      - name: Comment PR with results
+        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const path = './frontend/playwright-report/results.json';
+            
+            let comment = '## 🎭 Playwright Test Results\n\n';
+            
+            if (fs.existsSync(path)) {
+              const results = JSON.parse(fs.readFileSync(path, 'utf8'));
+              comment += `✅ Passed: ${results.passed}\n`;
+              comment += `❌ Failed: ${results.failed}\n`;
+              comment += `⏭️ Skipped: ${results.skipped}\n`;
+              comment += `⏱️ Duration: ${results.duration}ms\n\n`;
+              
+              if (results.failed > 0) {
+                comment += '### ❌ Failed Tests\n\n';
+                results.suites.forEach(suite => {
+                  suite.specs.forEach(spec => {
+                    spec.tests.forEach(test => {
+                      if (!test.results[0].status.includes('passed')) {
+                        comment += `- **${test.title}**\n`;
+                        comment += `  - ${test.results[0].error?.message || 'Unknown error'}\n\n`;
+                      }
+                    });
+                  });
+                });
+              }
+            } else {
+              comment += '❌ Test results not found\n';
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Cleanup services
+        if: always()
+        run: |
+          if [ ! -z "$BACKEND_PID" ]; then
+            kill $BACKEND_PID || true
+          fi
+          if [ ! -z "$FRONTEND_PID" ]; then
+            kill $FRONTEND_PID || true
+          fi
+
+  # Security Scanning
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # Infrastructure Validation
+  terraform-validate:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'infrastructure/') || github.event_name == 'pull_request' || github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Format Check
+        working-directory: ./infrastructure/terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: ./infrastructure/terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ./infrastructure/terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./infrastructure/terraform
+        run: terraform plan -out=tfplan
+        continue-on-error: true
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: infrastructure/terraform/tfplan
+          retention-days: 7
+
+  # Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, backend-ci, e2e-tests]
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd frontend && npm ci
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.12.x
+
+      - name: Run Lighthouse CI
+        run: |
+          lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+          LHCI_SERVER_BASE_URL: https://lhci.example.com
+          LHCI_BUILD_CONTEXT_CURRENT_REF: ${{ github.ref }}
+          LHCI_BUILD_CONTEXT_GITHUB_REPO_NAME: ${{ github.repository }}
+          LHCI_BUILD_CONTEXT_GITHUB_REPO_URL: https://github.com/${{ github.repository }}
+          LHCI_BUILD_CONTEXT_GITHUB_COMMIT_HASH: ${{ github.sha }}
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+          retention-days: 30
+
+  # Docker Build and Push
+  docker-build:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, backend-ci, security-scan, e2e-tests]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/828956650755/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-sa@akhila-gcp-123-493309.iam.gserviceaccount.com'
+
+      - name: Login to Artifact Registry
+        uses: 'google-github-actions/login@v2'
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Deploy to GKE
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: [docker-build, terraform-validate, e2e-tests]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/828956650755/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-sa@akhila-gcp-123-493309.iam.gserviceaccount.com'
+
+      - name: Setup GKE credentials
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'ai-platform-cluster'
+          location: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Deploy Frontend
+        run: |
+          helm upgrade --install ai-platform-frontend ./kubernetes/helm/charts/frontend \
+            --namespace ai-platform \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set image.repository=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend \
+            --wait \
+            --timeout=10m
+
+      - name: Deploy Backend
+        run: |
+          helm upgrade --install ai-platform-backend ./kubernetes/helm/charts/backend \
+            --namespace ai-platform \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set image.repository=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/backend \
+            --wait \
+            --timeout=10m
+
+  # Smoke Tests
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run smoke tests
+        run: npm run test:smoke
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+
+  # Monitoring Validation
+  monitoring-validation:
+    name: Monitoring Validation
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/828956650755/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-sa@akhila-gcp-123-493309.iam.gserviceaccount.com'
+
+      - name: Check service health
+        run: |
+          kubectl get pods -n ai-platform
+          kubectl get services -n ai-platform
+          kubectl get ingress -n ai-platform
+
+      - name: Validate monitoring
+        run: |
+          # Check if Prometheus is scraping metrics
+          kubectl get servicemonitor -n monitoring
+          
+          # Check if Grafana is accessible
+          kubectl get pods -n monitoring -l app=grafana
+
+  # Rollback on failure
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy, smoke-tests, monitoring-validation]
+    if: failure() && (needs.smoke-tests.result == 'failure' || needs.monitoring-validation.result == 'failure')
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/828956650755/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-sa@akhila-gcp-123-493309.iam.gserviceaccount.com'
+
+      - name: Setup GKE credentials
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'ai-platform-cluster'
+          location: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Rollback Frontend
+        run: |
+          helm rollback ai-platform-frontend -n ai-platform || echo "Frontend rollback failed or no previous release"
+
+      - name: Rollback Backend
+        run: |
+          helm rollback ai-platform-backend -n ai-platform || echo "Backend rollback failed or no previous release"
+
+      - name: Notify rollback
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Deployment Rollback',
+              body: 'Deployment was rolled back due to smoke test or monitoring validation failure.',
+              labels: ['rollback', 'incident']
+            })
