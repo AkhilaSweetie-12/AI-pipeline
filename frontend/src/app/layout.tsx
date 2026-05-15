@@ -1,5 +1,5 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
@@ -12,8 +12,12 @@ export const metadata: Metadata = {
   description: 'Enterprise-grade AI platform with secure chat, prompt management, and advanced features',
   keywords: ['AI', 'Chat', 'Enterprise', 'Secure', 'Platform'],
   authors: [{ name: 'AI Platform Team' }],
-  viewport: 'width=device-width, initial-scale=1',
   manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({

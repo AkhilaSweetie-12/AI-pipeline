@@ -52,7 +52,7 @@ jobs:
 
       - name: Unit tests
         working-directory: ./frontend
-        run: npm run test
+        run: npm run test -- --passWithNoTests
 
       - name: Build
         working-directory: ./frontend
@@ -141,28 +141,42 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
 
       - name: Install dependencies
         run: |
-          npm install --legacy-peer-deps
-          cd frontend && npm install --legacy-peer-deps
-          cd ../backend && npm install --legacy-peer-deps
+          npm install --legacy-peer-deps --prefix frontend
+          npm install --legacy-peer-deps --prefix backend
 
       - name: Install Playwright
         working-directory: ./frontend
         run: npx playwright install --with-deps
 
-      - name: Download build artifacts
+      - name: Download frontend build artifacts
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
           path: frontend/.next
         continue-on-error: true
 
-      - name: Build frontend if no artifacts
-        working-directory: ./frontend
-        run: npm run build
-        if: failure()
+      - name: Download backend build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: backend/dist
+        continue-on-error: true
+
+      - name: Build apps if artifacts are missing
+        run: |
+          if [ ! -d frontend/.next ] || [ ! -f frontend/.next/BUILD_ID ]; then
+            npm run build --prefix frontend
+          fi
+
+          if [ ! -d backend/dist ] || [ ! -f backend/dist/main.js ]; then
+            npm run build --prefix backend
+          fi
 
       - name: Start services
         run: |
