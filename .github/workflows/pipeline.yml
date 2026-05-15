@@ -154,17 +154,29 @@ jobs:
         working-directory: ./frontend
         run: npx playwright install --with-deps
 
-      - name: Download build artifacts
+      - name: Download frontend build artifacts
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
           path: frontend/.next
         continue-on-error: true
 
-      - name: Build frontend if no artifacts
-        working-directory: ./frontend
-        run: npm run build
-        if: failure()
+      - name: Download backend build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: backend/dist
+        continue-on-error: true
+
+      - name: Build apps if artifacts are missing
+        run: |
+          if [ ! -f frontend/.next/BUILD_ID ]; then
+            npm run build --prefix frontend
+          fi
+
+          if [ ! -f backend/dist/main.js ]; then
+            npm run build --prefix backend
+          fi
 
       - name: Start services
         run: |
