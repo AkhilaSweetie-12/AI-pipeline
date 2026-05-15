@@ -170,11 +170,11 @@ jobs:
 
       - name: Build apps if artifacts are missing
         run: |
-          if [ ! -f frontend/.next/BUILD_ID ]; then
+          if [ ! -d frontend/.next ] || [ ! -f frontend/.next/BUILD_ID ]; then
             npm run build --prefix frontend
           fi
 
-          if [ ! -f backend/dist/main.js ]; then
+          if [ ! -d backend/dist ] || [ ! -f backend/dist/main.js ]; then
             npm run build --prefix backend
           fi
 
