@@ -127,6 +127,30 @@ jobs:
       issues: write
       pull-requests: write
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     strategy:
       matrix:
         shard: [1, 2, 3, 4]
@@ -164,7 +188,22 @@ jobs:
         run: npm run build
         if: failure()
 
+      - name: Setup database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+        run: |
+          cd backend
+          npx prisma generate
+          npx prisma db push --accept-data-loss
+
       - name: Start services
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          NODE_ENV: development
+          JWT_SECRET: test-jwt-secret
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret
         run: |
           # Start backend
           cd backend
@@ -185,6 +224,15 @@ jobs:
           # Save PIDs for cleanup
           echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
           echo "FRONTEND_PID=$FRONTEND_PID" >> $GITHUB_ENV
+
+      - name: Check backend logs
+        run: |
+          echo "Backend process status:"
+          ps aux | grep node || echo "No node processes found"
+          echo "Checking if backend is running:"
+          curl -v http://localhost:3001/health || echo "Backend not responding"
+          echo "Backend logs:"
+          tail -20 backend/logs/combined.log || echo "No logs found"
 
       - name: Wait for services to be ready
         run: |
